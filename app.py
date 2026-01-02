@@ -50,9 +50,9 @@ st.markdown(
     <style>
     .card {
         padding: 1.2rem;
-        border-radius: 16px;
-        background: linear-gradient(135deg, #fdfbfb, #ebedee);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        border-radius: 18px;
+        background: linear-gradient(135deg, #ffffff, #f2f4f8);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
         margin-bottom: 1rem;
     }
     </style>
@@ -61,37 +61,47 @@ st.markdown(
 )
 
 st.title("🥗 Smart Food Recommender")
-st.caption("Tell me your goal. I’ll handle the nutrients. Easy.")
+st.caption("Pick your goal. Describe your vibe. Get food that actually matches.")
 
-with st.sidebar:
-    st.header("Your Preferences")
+col1, col2, col3 = st.columns(3)
+
+with col1:
     category = st.selectbox(
         "Food Category",
         [""] + sorted(df["Category"].unique().tolist())
     )
-    goal = st.radio(
+
+with col2:
+    goal = st.selectbox(
         "Main Goal",
-        {
-            "Build muscle / High protein": "a",
-            "Lose weight / Low fat & sugar": "b",
-            "Heart healthy / Low sodium & fat": "c",
-            "Vitamin rich / Immunity boost": "d"
-        }.keys()
+        [
+            "Build muscle / High protein",
+            "Lose weight / Low fat & sugar",
+            "Heart healthy / Low sodium & fat",
+            "Vitamin rich / Immunity boost"
+        ]
     )
-    diet = st.radio(
-        "Dietary Preference",
-        {
-            "Low sugar": "a",
-            "Low fat": "b",
-            "Low sodium": "c",
-            "No preference": "d"
-        }.keys()
+
+with col3:
+    diet = st.selectbox(
+        "Diet Preference",
+        [
+            "No preference",
+            "Low sugar",
+            "Low fat",
+            "Low sodium"
+        ]
     )
-    description = st.text_area(
-        "Describe your ideal food",
-        placeholder="light, healthy, high protein, easy to digest"
-    )
-    run = st.button("🔍 Find My Food")
+
+description = st.text_input(
+    "Describe your ideal food",
+    placeholder="light, healthy, high protein, easy to digest"
+)
+
+run = st.button("Find Food 🔥", use_container_width=True)
+
+if "results" not in st.session_state:
+    st.session_state.results = []
 
 if run:
     query = df.mean(numeric_only=True)
@@ -99,48 +109,51 @@ if run:
     query["Category"] = category if category else df["Category"].mode()[0]
     query["Nutrient Data Bank Number"] = df["Nutrient Data Bank Number"].median()
 
-    goal_map = {
-        "a": lambda q: q.update({"Data.Protein": df["Data.Protein"].quantile(0.9)}),
-        "b": lambda q: q.update({
-            "Data.Fat.Total Lipid": df["Data.Fat.Total Lipid"].quantile(0.1),
-            "Data.Sugar Total": df["Data.Sugar Total"].quantile(0.1)
-        }),
-        "c": lambda q: q.update({
-            "Data.Major Minerals.Sodium": df["Data.Major Minerals.Sodium"].quantile(0.1),
-            "Data.Fat.Total Lipid": df["Data.Fat.Total Lipid"].quantile(0.2)
-        }),
-        "d": lambda q: q.update({
-            "Data.Vitamins.Vitamin C": df["Data.Vitamins.Vitamin C"].quantile(0.8),
-            "Data.Vitamins.Vitamin A - RAE": df["Data.Vitamins.Vitamin A - RAE"].quantile(0.8)
-        })
-    }
+    if goal == "Build muscle / High protein":
+        query["Data.Protein"] = df["Data.Protein"].quantile(0.9)
+    if goal == "Lose weight / Low fat & sugar":
+        query["Data.Fat.Total Lipid"] = df["Data.Fat.Total Lipid"].quantile(0.1)
+        query["Data.Sugar Total"] = df["Data.Sugar Total"].quantile(0.1)
+    if goal == "Heart healthy / Low sodium & fat":
+        query["Data.Major Minerals.Sodium"] = df["Data.Major Minerals.Sodium"].quantile(0.1)
+        query["Data.Fat.Total Lipid"] = df["Data.Fat.Total Lipid"].quantile(0.2)
+    if goal == "Vitamin rich / Immunity boost":
+        query["Data.Vitamins.Vitamin C"] = df["Data.Vitamins.Vitamin C"].quantile(0.8)
+        query["Data.Vitamins.Vitamin A - RAE"] = df["Data.Vitamins.Vitamin A - RAE"].quantile(0.8)
 
-    diet_map = {
-        "a": lambda q: q.update({"Data.Sugar Total": df["Data.Sugar Total"].quantile(0.1)}),
-        "b": lambda q: q.update({"Data.Fat.Total Lipid": df["Data.Fat.Total Lipid"].quantile(0.1)}),
-        "c": lambda q: q.update({"Data.Major Minerals.Sodium": df["Data.Major Minerals.Sodium"].quantile(0.1)})
-    }
-
-    goal_map[{"Build muscle / High protein":"a","Lose weight / Low fat & sugar":"b","Heart healthy / Low sodium & fat":"c","Vitamin rich / Immunity boost":"d"}[goal]](query)
-    if diet != "No preference":
-        diet_map[{"Low sugar":"a","Low fat":"b","Low sodium":"c"}[diet]](query)
+    if diet == "Low sugar":
+        query["Data.Sugar Total"] = df["Data.Sugar Total"].quantile(0.1)
+    if diet == "Low fat":
+        query["Data.Fat.Total Lipid"] = df["Data.Fat.Total Lipid"].quantile(0.1)
+    if diet == "Low sodium":
+        query["Data.Major Minerals.Sodium"] = df["Data.Major Minerals.Sodium"].quantile(0.1)
 
     query_df = pd.DataFrame([query])
     X_query = preprocess.transform(query_df)
     _, indices = model.kneighbors(X_query)
 
-    st.subheader("🔥 Top Matches For You")
-    cols = st.columns(2)
+    st.session_state.results.append(indices[0])
 
-    for idx, i in enumerate(indices[0]):
-        row = df.iloc[i]
-        with cols[idx % 2]:
-            st.markdown(
-                f"""
-                <div class="card">
-                    <h4>{row['Description']}</h4>
-                    <p><b>Category:</b> {row['Category']}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+if st.session_state.results:
+    st.subheader("🔥 Your Recommendations")
+
+    cols = st.columns(2)
+    shown = set()
+
+    for batch in st.session_state.results:
+        for idx, i in enumerate(batch):
+            if i in shown:
+                continue
+            shown.add(i)
+            row = df.iloc[i]
+            with cols[idx % 2]:
+                st.markdown(
+                    f"""
+                    <div class="card">
+                        <h4>{row['Description']}</h4>
+                        <p><b>Category:</b> {row['Category']}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
